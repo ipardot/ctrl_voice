@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+import streamlit.components.v1 as components
 from bokeh.models.widgets import Button
 from bokeh.models import CustomJS
 from streamlit_bokeh_events import streamlit_bokeh_events
@@ -20,6 +21,14 @@ def on_message(client, userdata, message):
     time.sleep(2)
     message_received=str(message.payload.decode("utf-8"))
     st.write(message_received)
+
+# Órdenes que entiende el ESP32 (se envían tal cual las compara el Wokwi)
+COMANDOS = {
+    "enciende las luces": "enciende las luces",
+    "apaga las luces": "apaga las luces",
+    "abre la puerta": "abre la puerta",
+    "cierra la puerta": "Cierra la puerta",
+}
 
 broker="broker.mqttdashboard.com"
 port=1883
@@ -157,6 +166,13 @@ h1 a, h2 a, h3 a{ display:none !important; }
 .cava-orden b{ display:block; font-size:1.02rem; color:var(--vino-oscuro); }
 .cava-orden small{ color:#5a4f47; font-size:.88rem; }
 
+/* Script auxiliar invisible (quita el hover del botón Inicio) */
+.element-container:has(iframe[height="0"]),
+[data-testid="stElementContainer"]:has(iframe[height="0"]){ display:none; }
+
+/* Botones sin efecto hover */
+.stApp [data-testid="stButton"] button{ transition: all 0s 100000s !important; }
+
 /* Barra lateral: piedra cálida */
 section[data-testid="stSidebar"]{
   background:var(--crema);
@@ -207,7 +223,7 @@ st.markdown("""
   <div class="cava-orden"><b>“enciende las luces”</b><small>💡 Prende la luz de la cava</small></div>
   <div class="cava-orden"><b>“apaga las luces”</b><small>🌑 Apaga la luz de la cava</small></div>
   <div class="cava-orden"><b>“abre la puerta”</b><small>🚪 Abre la puerta de la cava</small></div>
-  <div class="cava-orden"><b>“Cierra la puerta”</b><small>🔒 Cierra la puerta de la cava</small></div>
+  <div class="cava-orden"><b>“cierra la puerta”</b><small>🔒 Cierra la puerta de la cava</small></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -217,6 +233,7 @@ stt_button = Button(label=" Inicio ", width=200)
 
 stt_button.js_on_event("button_click", CustomJS(code="""
     var recognition = new webkitSpeechRecognition();
+    recognition.lang = "es-CO";
     recognition.continuous = true;
     recognition.interimResults = true;
  
@@ -242,12 +259,37 @@ result = streamlit_bokeh_events(
     override_height=75,
     debounce_time=0)
 
+# Quitar el efecto hover del botón "Inicio" (Bokeh se dibuja en su propio iframe,
+# así que el estilo se inyecta dentro de ese iframe con un pequeño script)
+components.html("""
+<script>
+const CSS_SIN_HOVER = ".bk-btn{transition:all 0s 100000s !important;}";
+function quitarHover(){
+  window.parent.document.querySelectorAll("iframe").forEach(function(f){
+    try {
+      const d = f.contentDocument;
+      if (d && d.head && !d.getElementById("sin-hover")) {
+        const s = d.createElement("style");
+        s.id = "sin-hover";
+        s.textContent = CSS_SIN_HOVER;
+        d.head.appendChild(s);
+      }
+    } catch (e) {}
+  });
+}
+quitarHover();
+setInterval(quitarHover, 500);
+</script>
+""", height=0)
+
 if result:
     if "GET_TEXT" in result:
         st.write(result.get("GET_TEXT"))
         client1.on_publish = on_publish                            
         client1.connect(broker,port)  
-        message =json.dumps({"Act1":result.get("GET_TEXT").strip()})
+        texto = result.get("GET_TEXT").strip()
+        orden = COMANDOS.get(texto.lower().strip(" .,;:!?¡¿"), texto)
+        message =json.dumps({"Act1":orden})
         ret= client1.publish("voice_ctrl", message)
 
     
